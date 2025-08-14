@@ -1,0 +1,9 @@
+
+#!/usr/bin/env sh
+WRAPPER_JAR="gradle/wrapper/gradle-wrapper.jar"
+if [ ! -f "$WRAPPER_JAR" ]; then
+  echo "Downloading Gradle wrapper..."
+  mkdir -p gradle/wrapper
+  curl -sL -o "$WRAPPER_JAR" https://repo1.maven.org/maven2/org/gradle/gradle-wrapper/8.5/gradle-wrapper-8.5.jar
+fi
+exec java -Dorg.gradle.appname=gradlew -classpath "$WRAPPER_JAR" org.gradle.wrapper.GradleWrapperMain "$@"
