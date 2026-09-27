@@ -16,18 +16,17 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Android API 34
         run: |
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          sdkmanager --list_installed | grep -E "platforms;android-34|build-tools;34.0.0|platform-tools" || true
 
       - name: Gradle 8.5
         uses: gradle/actions/setup-gradle@v4
