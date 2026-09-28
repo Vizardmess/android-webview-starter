@@ -1,9 +1,6 @@
 name: Home Edition V60 Google Home APK
 
 on:
-  push:
-    branches:
-      - home-edition-v60
   workflow_dispatch:
 
 jobs:
@@ -34,6 +31,17 @@ jobs:
           test -x "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Check Google Home SDK
+        shell: bash
+        run: |
+          HOME_AAR="$HOME/.m2/repository/com/google/android/gms/play-services-home/17.1.0/play-services-home-17.1.0.aar"
+          TYPES_AAR="$HOME/.m2/repository/com/google/android/gms/play-services-home-types/17.1.0/play-services-home-types-17.1.0.aar"
+          if [ ! -f "$HOME_AAR" ] || [ ! -f "$TYPES_AAR" ]; then
+            echo "::error::Google Home SDK is not in the runner Maven repository."
+            echo "::error::The official Home APIs SDK must be downloaded while signed in to Google Home Developers and installed into ~/.m2/repository before this build can run."
+            exit 2
+          fi
 
       - name: Gradle 8.11.1
         uses: gradle/actions/setup-gradle@v4
