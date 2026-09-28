@@ -3,7 +3,6 @@ package com.gestaoconsultas.webview
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Color
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.VibrationEffect
@@ -25,7 +24,8 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity\nimport androidx.lifecycle.lifecycleScope
+import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.webkit.WebViewAssetLoader
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -44,10 +44,12 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
-    private val pickHtmlRequest = 5901
+    private val pickHtmlRequest = 6001
     private lateinit var webView: WebView
     private lateinit var assetLoader: WebViewAssetLoader
-    private var tts: TextToSpeech? = null\n    private lateinit var googleHomeBridge: GoogleHomeBridge
+    private var tts: TextToSpeech? = null
+    private lateinit var googleHomeBridge: GoogleHomeBridge
+
     private val importedHtml: File by lazy { File(filesDir, "home_edition.html") }
     private val ioExecutor = Executors.newCachedThreadPool()
     private val sockets = ConcurrentHashMap<String, WebSocket>()
@@ -60,7 +62,11 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        googleHomeBridge = GoogleHomeBridge(this, lifecycleScope) { type, payload -> emitGoogleHome(type, payload) }\n\n        tts = TextToSpeech(this) { status ->
+        googleHomeBridge = GoogleHomeBridge(this, lifecycleScope) { type, payload ->
+            emitGoogleHome(type, payload)
+        }
+
+        tts = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 val engine = tts ?: return@TextToSpeech
                 val pt = Locale("pt", "PT")
@@ -93,7 +99,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val subtitle = TextView(this).apply {
-            text = "V59 · correção de configuração\n\nSeleciona Home_Edition_V59_Android_Setup_Fix.html. A aplicação passa a servi-lo numa origem HTTPS interna do Android, permitindo Cofre/Web Crypto, e usa a camada nativa para comunicar com o Home Assistant sem depender de CORS."
+            text = "V60 · Google Home nativo\n\nSeleciona Home_Edition_V60_Google_Home_Native.html. Depois, a própria aplicação pede autorização ao Google Home e importa automaticamente a casa, divisões e dispositivos."
             textSize = 15f
             setTextColor(Color.rgb(190, 200, 210))
             gravity = Gravity.CENTER
@@ -101,7 +107,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val button = Button(this).apply {
-            text = "Importar Home Edition V59"
+            text = "Importar Home Edition V60"
             setOnClickListener { openHtmlPicker() }
         }
 
@@ -128,7 +134,7 @@ class MainActivity : AppCompatActivity() {
         settings.databaseEnabled = true
         settings.allowContentAccess = true
         settings.allowFileAccess = false
-        settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+        settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
         settings.mediaPlaybackRequiresUserGesture = false
 
         webView.webViewClient = object : WebViewClient() {
@@ -138,7 +144,6 @@ class MainActivity : AppCompatActivity() {
         }
         webView.webChromeClient = WebChromeClient()
         webView.addJavascriptInterface(NativeBridge(), "HomeNative")
-
         webView.loadUrl("https://appassets.androidplatform.net/files/home_edition.html")
     }
 
@@ -161,13 +166,14 @@ class MainActivity : AppCompatActivity() {
             contentResolver.openInputStream(uri)?.use { input ->
                 FileOutputStream(importedHtml, false).use { output -> input.copyTo(output) }
             } ?: throw IllegalStateException("Não foi possível abrir o ficheiro.")
-            Toast.makeText(this, "Home Edition V59 importada.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Home Edition V60 importada.", Toast.LENGTH_SHORT).show()
             showWebApp()
         } catch (e: Exception) {
-            Toast.makeText(this, "Falha ao importar: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Falha ao importar: " + (e.message ?: e.javaClass.simpleName), Toast.LENGTH_LONG).show()
         }
     }
 
+    @Deprecated("Compatibility beta")
     override fun onBackPressed() {
         if (::webView.isInitialized && webView.canGoBack()) webView.goBack() else super.onBackPressed()
     }
@@ -194,7 +200,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun emitGoogleHome(type: String, payload: String) {\n        evaluate(\n            \"window.HomeEditionGoogleHomeV60&&window.HomeEditionGoogleHomeV60._nativeEvent(\" +\n                JSONObject.quote(type) + \",\" + JSONObject.quote(payload) + \");\"\n        )\n    }\n\n    private fun emitHttp(id: String, payload: JSONObject) {
+    private fun emitGoogleHome(type: String, payload: String) {
+        evaluate(
+            "window.HomeEditionGoogleHomeV60&&window.HomeEditionGoogleHomeV60._nativeEvent(" +
+                JSONObject.quote(type) + "," + JSONObject.quote(payload) + ");"
+        )
+    }
+
+    private fun emitHttp(id: String, payload: JSONObject) {
         evaluate(
             "window.HomeEditionNativeNetwork&&window.HomeEditionNativeNetwork._httpResult(" +
                 JSONObject.quote(id) + "," + JSONObject.quote(payload.toString()) + ");"
@@ -248,6 +261,24 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun pickHtml() {
             runOnUiThread { openHtmlPicker() }
+        }
+
+        @JavascriptInterface
+        fun googleHomeStatus(): String = googleHomeBridge.statusJson()
+
+        @JavascriptInterface
+        fun requestGoogleHomePermissions() {
+            googleHomeBridge.requestPermissions()
+        }
+
+        @JavascriptInterface
+        fun googleHomeSnapshot() {
+            googleHomeBridge.snapshot()
+        }
+
+        @JavascriptInterface
+        fun googleHomeCommand(json: String) {
+            googleHomeBridge.command(json)
         }
 
         @JavascriptInterface
@@ -360,7 +391,7 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun reportJsError(message: String, stack: String) {
-            Log.e("HomeEditionJS", "$message\n$stack")
+            Log.e("HomeEditionJS", message + "\n" + stack)
         }
 
         @JavascriptInterface
@@ -372,7 +403,8 @@ class MainActivity : AppCompatActivity() {
                 .put("secureOrigin", true)
                 .put("nativeHttp", true)
                 .put("nativeWebSocket", true)
-                .put("versionName", pkg.versionName ?: "0.59.0")
+                .put("googleHomeNative", true)
+                .put("versionName", pkg.versionName ?: "0.60.0")
                 .put("sdkInt", Build.VERSION.SDK_INT)
                 .put("androidRelease", Build.VERSION.RELEASE ?: "")
                 .put("manufacturer", Build.MANUFACTURER ?: "")
