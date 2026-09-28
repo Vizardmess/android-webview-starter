@@ -25,7 +25,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatActivity\nimport androidx.lifecycle.lifecycleScope
 import androidx.webkit.WebViewAssetLoader
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -47,7 +47,7 @@ class MainActivity : AppCompatActivity() {
     private val pickHtmlRequest = 5901
     private lateinit var webView: WebView
     private lateinit var assetLoader: WebViewAssetLoader
-    private var tts: TextToSpeech? = null
+    private var tts: TextToSpeech? = null\n    private lateinit var googleHomeBridge: GoogleHomeBridge
     private val importedHtml: File by lazy { File(filesDir, "home_edition.html") }
     private val ioExecutor = Executors.newCachedThreadPool()
     private val sockets = ConcurrentHashMap<String, WebSocket>()
@@ -60,7 +60,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        tts = TextToSpeech(this) { status ->
+        googleHomeBridge = GoogleHomeBridge(this, lifecycleScope) { type, payload -> emitGoogleHome(type, payload) }\n\n        tts = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 val engine = tts ?: return@TextToSpeech
                 val pt = Locale("pt", "PT")
@@ -194,7 +194,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun emitHttp(id: String, payload: JSONObject) {
+    private fun emitGoogleHome(type: String, payload: String) {\n        evaluate(\n            \"window.HomeEditionGoogleHomeV60&&window.HomeEditionGoogleHomeV60._nativeEvent(\" +\n                JSONObject.quote(type) + \",\" + JSONObject.quote(payload) + \");\"\n        )\n    }\n\n    private fun emitHttp(id: String, payload: JSONObject) {
         evaluate(
             "window.HomeEditionNativeNetwork&&window.HomeEditionNativeNetwork._httpResult(" +
                 JSONObject.quote(id) + "," + JSONObject.quote(payload.toString()) + ");"
