@@ -1,7 +1,6 @@
 package com.gestaoconsultas.webview
 
 import android.annotation.SuppressLint
-import android.app.AlarmManager
 import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
@@ -12,10 +11,13 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.provider.AlarmClock
 import android.speech.tts.TextToSpeech
+import android.util.Log
 import android.view.Gravity
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -24,24 +26,47 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.webkit.WebViewAssetLoader
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
+import okio.ByteString
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
-    private val pickHtmlRequest = 5801
+    private val pickHtmlRequest = 5901
     private lateinit var webView: WebView
+    private lateinit var assetLoader: WebViewAssetLoader
     private var tts: TextToSpeech? = null
     private val importedHtml: File by lazy { File(filesDir, "home_edition.html") }
+    private val ioExecutor = Executors.newCachedThreadPool()
+    private val sockets = ConcurrentHashMap<String, WebSocket>()
+    private val wsClient = OkHttpClient.Builder()
+        .pingInterval(20, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(0, TimeUnit.MILLISECONDS)
+        .build()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
         tts = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 val engine = tts ?: return@TextToSpeech
                 val pt = Locale("pt", "PT")
-                if (engine.isLanguageAvailable(pt) >= TextToSpeech.LANG_AVAILABLE) engine.language = pt
+                if (engine.isLanguageAvailable(pt) >= TextToSpeech.LANG_AVAILABLE) {
+                    engine.language = pt
+                }
             }
         }
 
@@ -66,15 +91,17 @@ class MainActivity : AppCompatActivity() {
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
         }
+
         val subtitle = TextView(this).apply {
-            text = "V58 · primeira APK\n\nSeleciona o ficheiro Home_Edition_V58_First_Installable_APK.html que descarregaste do ChatGPT. A app fará uma cópia privada e abrirá esse conteúdo automaticamente nos próximos arranques."
+            text = "V59 · correção de configuração\n\nSeleciona Home_Edition_V59_Android_Setup_Fix.html. A aplicação passa a servi-lo numa origem HTTPS interna do Android, permitindo Cofre/Web Crypto, e usa a camada nativa para comunicar com o Home Assistant sem depender de CORS."
             textSize = 15f
             setTextColor(Color.rgb(190, 200, 210))
             gravity = Gravity.CENTER
             setPadding(0, dp(18), 0, dp(22))
         }
+
         val button = Button(this).apply {
-            text = "Importar Home Edition"
+            text = "Importar Home Edition V59"
             setOnClickListener { openHtmlPicker() }
         }
 
@@ -89,22 +116,30 @@ class MainActivity : AppCompatActivity() {
         webView = WebView(this)
         setContentView(webView)
 
+        assetLoader = WebViewAssetLoader.Builder()
+            .addPathHandler("/files/", WebViewAssetLoader.InternalStoragePathHandler(this, filesDir))
+            .build()
+
         WebView.setWebContentsDebuggingEnabled(true)
+
         val settings: WebSettings = webView.settings
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
         settings.databaseEnabled = true
-        settings.allowFileAccess = true
         settings.allowContentAccess = true
-        settings.allowFileAccessFromFileURLs = true
-        settings.allowUniversalAccessFromFileURLs = true
+        settings.allowFileAccess = false
         settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
         settings.mediaPlaybackRequiresUserGesture = false
 
-        webView.webViewClient = WebViewClient()
+        webView.webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest): WebResourceResponse? {
+                return assetLoader.shouldInterceptRequest(request.url)
+            }
+        }
         webView.webChromeClient = WebChromeClient()
         webView.addJavascriptInterface(NativeBridge(), "HomeNative")
-        webView.loadUrl(Uri.fromFile(importedHtml).toString())
+
+        webView.loadUrl("https://appassets.androidplatform.net/files/home_edition.html")
     }
 
     private fun openHtmlPicker() {
@@ -116,7 +151,7 @@ class MainActivity : AppCompatActivity() {
         startActivityForResult(intent, pickHtmlRequest)
     }
 
-    @Deprecated("Deprecated in Android SDK but retained for this compatibility beta")
+    @Deprecated("Compatibility beta")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != pickHtmlRequest || resultCode != RESULT_OK) return
@@ -126,7 +161,7 @@ class MainActivity : AppCompatActivity() {
             contentResolver.openInputStream(uri)?.use { input ->
                 FileOutputStream(importedHtml, false).use { output -> input.copyTo(output) }
             } ?: throw IllegalStateException("Não foi possível abrir o ficheiro.")
-            Toast.makeText(this, "Home Edition importada.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Home Edition V59 importada.", Toast.LENGTH_SHORT).show()
             showWebApp()
         } catch (e: Exception) {
             Toast.makeText(this, "Falha ao importar: ${e.message}", Toast.LENGTH_LONG).show()
@@ -138,6 +173,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        sockets.values.forEach { it.close(1000, "app destroyed") }
+        sockets.clear()
+        ioExecutor.shutdownNow()
+        wsClient.dispatcher.executorService.shutdown()
         if (::webView.isInitialized) {
             webView.removeJavascriptInterface("HomeNative")
             webView.destroy()
@@ -148,6 +187,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun evaluate(script: String) {
+        runOnUiThread {
+            if (::webView.isInitialized) webView.evaluateJavascript(script, null)
+        }
+    }
+
+    private fun emitHttp(id: String, payload: JSONObject) {
+        evaluate(
+            "window.HomeEditionNativeNetwork&&window.HomeEditionNativeNetwork._httpResult(" +
+                JSONObject.quote(id) + "," + JSONObject.quote(payload.toString()) + ");"
+        )
+    }
+
+    private fun emitWs(id: String, type: String, payload: String) {
+        evaluate(
+            "window.__HomeNativeWs&&window.__HomeNativeWs.event(" +
+                JSONObject.quote(id) + "," + JSONObject.quote(type) + "," + JSONObject.quote(payload) + ");"
+        )
+    }
 
     inner class NativeBridge {
         @JavascriptInterface
@@ -192,12 +251,128 @@ class MainActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
+        fun httpRequest(id: String, method: String, url: String, headersJson: String, body: String) {
+            ioExecutor.execute {
+                val result = JSONObject()
+                try {
+                    val parsed = URL(url)
+                    if (parsed.protocol != "http" && parsed.protocol != "https") {
+                        throw IllegalArgumentException("Apenas HTTP/HTTPS é suportado.")
+                    }
+
+                    val connection = parsed.openConnection() as HttpURLConnection
+                    connection.requestMethod = method.uppercase(Locale.ROOT)
+                    connection.connectTimeout = 12000
+                    connection.readTimeout = 15000
+                    connection.instanceFollowRedirects = true
+                    connection.useCaches = false
+
+                    val headers = if (headersJson.isBlank()) JSONObject() else JSONObject(headersJson)
+                    val names = headers.keys()
+                    while (names.hasNext()) {
+                        val key = names.next()
+                        connection.setRequestProperty(key, headers.optString(key))
+                    }
+
+                    if (body.isNotEmpty() && connection.requestMethod !in listOf("GET", "HEAD")) {
+                        connection.doOutput = true
+                        connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                    }
+
+                    val status = connection.responseCode
+                    val stream = if (status >= 400) connection.errorStream else connection.inputStream
+                    val responseBody = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+                    val responseHeaders = JSONObject()
+                    connection.headerFields.forEach { (key, values) ->
+                        if (key != null && values != null) responseHeaders.put(key, values.joinToString(", "))
+                    }
+
+                    result.put("status", status)
+                    result.put("statusText", connection.responseMessage ?: "")
+                    result.put("body", responseBody)
+                    result.put("headers", responseHeaders)
+                    connection.disconnect()
+                } catch (e: Exception) {
+                    result.put("error", e.message ?: e.javaClass.simpleName)
+                }
+                emitHttp(id, result)
+            }
+        }
+
+        @JavascriptInterface
+        fun wsConnect(id: String, url: String) {
+            try {
+                if (!url.startsWith("ws://") && !url.startsWith("wss://")) {
+                    emitWs(id, "error", "URL WebSocket inválido.")
+                    emitWs(id, "close", JSONObject().put("code", 1006).put("reason", "invalid URL").toString())
+                    return
+                }
+
+                val request = Request.Builder().url(url).build()
+                val socket = wsClient.newWebSocket(request, object : WebSocketListener() {
+                    override fun onOpen(webSocket: WebSocket, response: Response) {
+                        sockets[id] = webSocket
+                        emitWs(id, "open", "")
+                    }
+
+                    override fun onMessage(webSocket: WebSocket, text: String) {
+                        emitWs(id, "message", text)
+                    }
+
+                    override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
+                        emitWs(id, "message", bytes.utf8())
+                    }
+
+                    override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                        webSocket.close(code, reason)
+                    }
+
+                    override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                        sockets.remove(id)
+                        emitWs(id, "close", JSONObject().put("code", code).put("reason", reason).toString())
+                    }
+
+                    override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                        sockets.remove(id)
+                        emitWs(id, "error", t.message ?: "WebSocket error")
+                        emitWs(id, "close", JSONObject().put("code", 1006).put("reason", t.message ?: "failure").toString())
+                    }
+                })
+                sockets[id] = socket
+            } catch (e: Exception) {
+                emitWs(id, "error", e.message ?: "WebSocket error")
+                emitWs(id, "close", JSONObject().put("code", 1006).put("reason", e.message ?: "failure").toString())
+            }
+        }
+
+        @JavascriptInterface
+        fun wsSend(id: String, data: String) {
+            val socket = sockets[id]
+            if (socket == null || !socket.send(data)) {
+                emitWs(id, "error", "WebSocket não está aberto.")
+            }
+        }
+
+        @JavascriptInterface
+        fun wsClose(id: String, code: Int, reason: String) {
+            sockets.remove(id)?.close(code.coerceIn(1000, 4999), reason)
+        }
+
+        @JavascriptInterface
+        fun reportJsError(message: String, stack: String) {
+            Log.e("HomeEditionJS", "$message\n$stack")
+        }
+
+        @JavascriptInterface
         fun getRuntimeInfo(): String {
             val pkg = packageManager.getPackageInfo(packageName, 0)
             return JSONObject()
                 .put("native", true)
-                .put("shell", "android-webview")
-                .put("versionName", pkg.versionName ?: "0.58.0")
+                .put("shell", "android-secure-webview")
+                .put("secureOrigin", true)
+                .put("nativeHttp", true)
+                .put("nativeWebSocket", true)
+                .put("versionName", pkg.versionName ?: "0.59.0")
                 .put("sdkInt", Build.VERSION.SDK_INT)
                 .put("androidRelease", Build.VERSION.RELEASE ?: "")
                 .put("manufacturer", Build.MANUFACTURER ?: "")

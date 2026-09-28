@@ -11,8 +11,8 @@ android {
         applicationId "pt.homeedition.app"
         minSdk 24
         targetSdk 34
-        versionCode 58
-        versionName "0.58.0"
+        versionCode 59
+        versionName "0.59.0"
     }
 
     compileOptions {
@@ -35,4 +35,5 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'com.google.android.material:material:1.12.0'
     implementation 'androidx.webkit:webkit:1.11.0'
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 }

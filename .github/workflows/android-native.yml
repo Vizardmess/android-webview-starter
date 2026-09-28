@@ -1,9 +1,9 @@
-name: Home Edition V58 APK
+name: Home Edition V59 APK
 
 on:
   push:
     branches:
-      - home-edition-v58
+      - home-edition-v59
   workflow_dispatch:
 
 jobs:
@@ -12,7 +12,7 @@ jobs:
     timeout-minutes: 25
 
     steps:
-      - name: Checkout V58
+      - name: Checkout V59
         uses: actions/checkout@v4
 
       - name: Java 17
@@ -34,14 +34,13 @@ jobs:
           test -x "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platform-tools" "platforms;android-34" "build-tools;34.0.0"
-          "$SDKMANAGER" --list_installed | grep -E "platforms;android-34|build-tools;34.0.0|platform-tools"
 
       - name: Gradle 8.5
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.5"
 
-      - name: Build Home Edition V58
+      - name: Build Home Edition V59
         run: |
           cd android
           gradle --no-daemon :app:assembleDebug --stacktrace
@@ -49,15 +48,15 @@ jobs:
       - name: Prepare named APK
         run: |
           mkdir -p dist
-          cp android/app/build/outputs/apk/debug/app-debug.apk dist/Home_Edition_V58_debug.apk
-          sha256sum dist/Home_Edition_V58_debug.apk | tee dist/Home_Edition_V58_debug.apk.sha256
+          cp android/app/build/outputs/apk/debug/app-debug.apk dist/Home_Edition_V59_debug.apk
+          sha256sum dist/Home_Edition_V59_debug.apk | tee dist/Home_Edition_V59_debug.apk.sha256
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Home_Edition_V58_debug
+          name: Home_Edition_V59_debug
           path: |
-            dist/Home_Edition_V58_debug.apk
-            dist/Home_Edition_V58_debug.apk.sha256
+            dist/Home_Edition_V59_debug.apk
+            dist/Home_Edition_V59_debug.apk.sha256
           if-no-files-found: error
           retention-days: 14
