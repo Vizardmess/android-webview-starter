@@ -1,0 +1,23 @@
+name: Export V60 Android Source
+
+on:
+  push:
+    branches:
+      - home-edition-v60
+    paths:
+      - ".github/workflows/export-v60-source.yml"
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pack Android source
+        run: |
+          tar -czf v60-android-source.tar.gz android
+      - name: Upload source
+        uses: actions/upload-artifact@v4
+        with:
+          name: v60-android-source
+          path: v60-android-source.tar.gz
+          retention-days: 3
