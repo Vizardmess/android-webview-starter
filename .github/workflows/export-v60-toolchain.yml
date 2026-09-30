@@ -46,11 +46,11 @@ jobs:
           cd /tmp/android-prewarm
           gradle --no-daemon :app:dependencies --configuration debugRuntimeClasspath >/tmp/v60-dependencies.txt
 
-      - name: Pack offline toolchain
+      - name: Pack and split offline toolchain
         shell: bash
         run: |
           set -euxo pipefail
-          mkdir -p /tmp/v60-toolchain/android-sdk /tmp/v60-toolchain/gradle
+          mkdir -p /tmp/v60-toolchain/android-sdk /tmp/v60-toolchain/gradle /tmp/v60-parts
           cp -a "$SDK_ROOT/platforms/android-36" /tmp/v60-toolchain/android-sdk/
           cp -a "$SDK_ROOT/build-tools/36.0.0" /tmp/v60-toolchain/android-sdk/
           cp -a "$SDK_ROOT/platform-tools" /tmp/v60-toolchain/android-sdk/
@@ -59,13 +59,31 @@ jobs:
           cp -a "$GRADLE_HOME" /tmp/v60-toolchain/gradle/gradle-8.11.1
           cp -a "$HOME/.gradle/caches" /tmp/v60-toolchain/gradle-caches
           cp /tmp/v60-dependencies.txt /tmp/v60-toolchain/
-          tar -C /tmp -czf v60-offline-toolchain.tar.gz v60-toolchain
-          du -h v60-offline-toolchain.tar.gz
+          tar -C /tmp -czf /tmp/v60-offline-toolchain.tar.gz v60-toolchain
+          split -b 70M -d -a 2 /tmp/v60-offline-toolchain.tar.gz /tmp/v60-parts/part-
+          ls -lh /tmp/v60-parts
 
-      - name: Upload toolchain
+      - name: Upload part 00
         uses: actions/upload-artifact@v4
-        with:
-          name: v60-offline-toolchain
-          path: v60-offline-toolchain.tar.gz
-          if-no-files-found: error
-          retention-days: 3
+        with: { name: v60-toolchain-part-00, path: /tmp/v60-parts/part-00, if-no-files-found: ignore, retention-days: 3 }
+      - name: Upload part 01
+        uses: actions/upload-artifact@v4
+        with: { name: v60-toolchain-part-01, path: /tmp/v60-parts/part-01, if-no-files-found: ignore, retention-days: 3 }
+      - name: Upload part 02
+        uses: actions/upload-artifact@v4
+        with: { name: v60-toolchain-part-02, path: /tmp/v60-parts/part-02, if-no-files-found: ignore, retention-days: 3 }
+      - name: Upload part 03
+        uses: actions/upload-artifact@v4
+        with: { name: v60-toolchain-part-03, path: /tmp/v60-parts/part-03, if-no-files-found: ignore, retention-days: 3 }
+      - name: Upload part 04
+        uses: actions/upload-artifact@v4
+        with: { name: v60-toolchain-part-04, path: /tmp/v60-parts/part-04, if-no-files-found: ignore, retention-days: 3 }
+      - name: Upload part 05
+        uses: actions/upload-artifact@v4
+        with: { name: v60-toolchain-part-05, path: /tmp/v60-parts/part-05, if-no-files-found: ignore, retention-days: 3 }
+      - name: Upload part 06
+        uses: actions/upload-artifact@v4
+        with: { name: v60-toolchain-part-06, path: /tmp/v60-parts/part-06, if-no-files-found: ignore, retention-days: 3 }
+      - name: Upload part 07
+        uses: actions/upload-artifact@v4
+        with: { name: v60-toolchain-part-07, path: /tmp/v60-parts/part-07, if-no-files-found: ignore, retention-days: 3 }
